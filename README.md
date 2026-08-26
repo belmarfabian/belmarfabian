@@ -1,85 +1,37 @@
-# Hola, soy Fabián Belmar 👋
+## Fabián Belmar
 
-Doctor en Procesos e Instituciones Políticas e Investigador Asistente en el Centro de Estudios Públicos (CEP).
+Investigador postdoctoral en el Núcleo Milenio para la Ciencia de Datos Sociales (SODAS) e investigador asistente en C22, el programa de métodos digitales del Centro de Estudios Públicos (CEP). Doctor en Procesos e Instituciones Políticas por la Universidad Adolfo Ibáñez, con una tesis sobre corrupción más allá del Estado a partir del caso FIFA.
 
-## 🎓 Sobre mí
+Trabajo sobre clientelismo, corrupción y política local en Chile, y sobre lo que los métodos computacionales permiten ver en esos fenómenos que las herramientas tradicionales no alcanzan. Este perfil reúne la parte de ese trabajo que se puede mostrar: plataformas, dashboards y herramientas de análisis, casi todas publicadas y en funcionamiento.
 
-Doctor en Procesos e Instituciones Políticas por la Universidad Adolfo Ibáñez (2020-2025, aprobado con distinción máxima), con tesis sobre "Corrupción al margen del Estado. El caso de la FIFA" dirigida por Dr. Aldo Mascareño. Licenciado en Ciencia Política y Administración Pública por la Universidad de Talca (2013-2018, distinción máxima).
+### Plataformas y dashboards
 
-Actualmente me desempeño como **Investigador Asistente** en el proyecto C22 - Métodos Digitales del **Centro de Estudios Públicos (CEP)**, aplicando ciencia de datos y machine learning al estudio de fenómenos político-sociales.
+| Proyecto | De qué se trata |
+|---|---|
+| [Conflictos y justicia ambiental en Chile](https://belmarfabian.github.io/causas-ambientales-chile/) | Universo de conflictos socioecológicos chilenos y causas ante los tribunales ambientales, con datos abiertos y ficha por caso. SODAS y CEP. |
+| [Visualizadores de la Cámara de Diputadas y Diputados](https://belmarfabian.github.io/visualizadores-camara-c22/) | Votaciones y comportamiento legislativo del Congreso chileno, en visualizadores interactivos. C22-CEP. |
+| [Dashboards C22-CEP](https://belmarfabian.github.io/dashboards-c22/) | Conjunto de tableros sobre la sociedad chilena producidos por el programa C22. |
+| [CEP Agent World](https://belmarfabian.github.io/cep-agent-world/) | Población sintética construida sobre los microdatos de la Encuesta CEP, con motores de simulación ABM, LLM e híbrido para estudiar dinámicas de opinión. |
+| [Discursos del balcón, 1990-2026](https://belmarfabian.github.io/dashboard-balcon/) | Frecuencia léxica de los discursos de la noche electoral, de Aylwin en adelante. Acompaña al Punto de Referencia 766. |
+| [Nombremetro](https://belmarfabian.github.io/nombremetro/) | Ejercicio de divulgación sobre clasismo de apellidos en Chile: ocho factores, cada uno con su referencia académica. |
+| [RCSL 2026](https://belmarfabian.github.io/rcsl2026/) | Sitio de la conferencia del Research Committee on Sociology of Law, Universidad Diego Portales. |
 
-### Áreas de Investigación
-- Corrupción y organizaciones no estatales
-- Clientelismo y vínculos representante-representado
-- Métodos cuantitativos y ciencia de datos aplicada a ciencias sociales
-- Política local y gobierno municipal
-- Procesos electorales y comportamiento político
+### Publicaciones recientes
 
-### Experiencia Destacada
-- **2025 -** Investigador Asistente, Centro de Estudios Públicos (CEP)
-- **2023-2024** Investigador Pasante, Instituto Gino Germani, Universidad de Buenos Aires
-- **2018-2023** Coordinador de Proyectos, Centro de Análisis Político, Universidad de Talca
+- Belmar, F., y Mascareño, A. (2025). Corruption: An uneven field of research—Between state and private topics. *Societies*, 15(7), 186. [DOI](https://doi.org/10.3390/soc15070186)
+- Belmar, F., y Morales, M. (2025). Ethnic solidarity in the non-programmatic distribution of benefits: The case of Mapuche mayors in Chile. *Ethnic and Racial Studies*. [DOI](https://doi.org/10.1080/01419870.2025.2470896)
+- Belmar, F., Lara, B., y Miguieles, J. (2024). Unpacking electoral competition: Campaign spending, vote distribution and turnout in Chilean mayoral elections. *Policy Studies*. [DOI](https://doi.org/10.1080/01442872.2024.2427280)
+- Belmar, F., Maldonado, F., y Morales, M. (2024). In search of the missing link: Election law infractions and candidate sanctions. *Public Integrity*. [DOI](https://doi.org/10.1080/10999922.2024.2364384)
+- Belmar, F., Morales, M., y Villarroel, B. (2023). Writing constitution without parties? The programmatic weakness of party-voter linkages in the Chilean political change. *Politics*, 45(1). [DOI](https://doi.org/10.1177/02633957231158073)
 
-**Perfil académico:**
-- 📍 Santiago, Chile
-- 🎓 PhD en Procesos e Instituciones Políticas (UAI, 2025)
-- 📊 +10 artículos en revistas WoS/Scopus (SSCI y ESCI)
-- 🔬 Investigador, docente y consultor en análisis de datos
-- 🌐 Web: [belmarfabian.github.io](https://belmarfabian.github.io)
+La lista completa -artículos, capítulos, documentos de trabajo y prensa- está en [belmarfabian.github.io](https://belmarfabian.github.io).
 
-## 📂 Proyectos Destacados
+### Herramientas
 
-### [🌐 Sitio Web Académico](https://github.com/belmarfabian/belmarfabian.github.io)
-Portafolio académico con publicaciones indexadas en Web of Science/Scopus, capítulos de libros, working papers y CV actualizado. Diseño minimalista enfocado en contenido científico.
+Trabajo habitualmente en R y Python para análisis y modelamiento, SQL para bases de datos, QGIS para lo espacial y LaTeX para escribir. Lo que publico acá suele terminar en un sitio estático, porque una investigación que nadie puede abrir no circula.
 
-### [📅 RCSL 2026 Conference Website](https://github.com/belmarfabian/rcsl2026)
-Sitio web para la conferencia 2026 de la Revista de Ciencias Sociales y Jurídicas (RCSL) en Universidad Diego Portales, Santiago, Chile.
+### Dónde encontrarme
 
-### [📘 Introducción a R](https://github.com/belmarfabian/intro_r)
-Materiales educativos para aprender análisis de datos con R, incluyendo scripts, datasets de práctica y recursos de aprendizaje.
+[Sitio web](https://belmarfabian.github.io) · [Google Scholar](https://scholar.google.es/citations?user=wr6beBsAAAAJ) · [ORCID](https://orcid.org/0000-0003-4239-1874) · [Scopus](https://www.scopus.com/authid/detail.uri?authorId=57220090371) · [ResearchGate](https://www.researchgate.net/profile/Fabian-Belmar-3)
 
-## 🛠️ Herramientas y Habilidades
-
-**Programación y Análisis:**
-- **R** (Avanzado) - Análisis estadístico, visualización, modelado
-- **Python** (Intermedio) - Ciencia de datos, machine learning
-- **SQL** (Intermedio) - Consultas y gestión de bases de datos
-- **LaTeX** (Avanzado) - Composición de documentos académicos
-
-**Software Estadístico:**
-- SPSS, STATA, Jamovi (Avanzado)
-- QGIS (Análisis geo-espacial)
-- ATLAS.ti, VOSviewer (Análisis cualitativo)
-
-**Tecnologías Web:**
-
-![R](https://img.shields.io/badge/R-276DC3?style=for-the-badge&logo=r&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![HTML5](https://img.shields.io/badge/HTML5-E34F26?style=for-the-badge&logo=html5&logoColor=white)
-![CSS3](https://img.shields.io/badge/CSS3-1572B6?style=for-the-badge&logo=css3&logoColor=white)
-![LaTeX](https://img.shields.io/badge/LaTeX-008080?style=for-the-badge&logo=latex&logoColor=white)
-![Git](https://img.shields.io/badge/Git-F05032?style=for-the-badge&logo=git&logoColor=white)
-
-## 📊 Estadísticas GitHub
-
-![GitHub Stats](https://github-readme-stats.vercel.app/api?username=belmarfabian&show_icons=true&theme=default&hide_border=true&count_private=true)
-
-## 📚 Publicaciones Recientes
-
-- **2025** - "Who demands clientelism?" en *Political Science Research & Methods* (SSCI)
-- **2025** - "Corruption: An uneven field" en *Societies* (ESCI)
-- **2025** - "Ethnic solidarity in the non-programmatic distribution" en *Ethnic and Racial Studies* (SSCI)
-- **2024** - "Unpacking electoral competition" en *Policy Studies* (SSCI, IF: 2.2)
-- **2024** - "In search of the missing link" en *Public Integrity* (ESCI, IF: 1.6)
-
-Ver lista completa en: [belmarfabian.github.io](https://belmarfabian.github.io)
-
-## 📫 Contacto
-
-- 🌐 Web: [belmarfabian.github.io](https://belmarfabian.github.io)
-- 📧 fbelmars@alumnos.uai.cl | fbelmar@cepchile.cl
-- 📚 [Google Scholar](https://scholar.google.com) | [ORCID](https://orcid.org) | [Scopus](https://www.scopus.com) | [ResearchGate](https://www.researchgate.net)
-
----
-
-*💡 Abierto a colaboraciones en investigación sobre procesos políticos, corrupción, clientelismo y métodos cuantitativos*
+Correo: fbelmar [at] cepchile [dot] cl
