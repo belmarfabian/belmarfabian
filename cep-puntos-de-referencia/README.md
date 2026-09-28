@@ -36,11 +36,22 @@ La fecha se toma del texto del número y no de la fecha de la ficha porque los n
 
 Los metadatos se escriben dos veces: en el diccionario `Info` del PDF y en el paquete XMP (Dublin Core y PRISM). Acrobat, Zotero y la mayoría de los lectores dan prioridad al XMP, y el que deja InDesign suele traer como título el nombre del archivo `.indd`.
 
+### Errores del sitio que el script corrige
+
+- **Campos `citation_*` copiados de otra ficha.** Las fichas 40942 (N° 785) y 40819 (N° 783) conservaban título, autores y PDF de otro número. Se detecta porque el número o el título de la ficha no coinciden con los `citation_*`; en ese caso se usan los campos propios, los autores de `acf.autores` y el PDF enlazado en la página.
+- **Dos fichas con el mismo PDF.** Se conserva la ficha cuyo número coincide con el impreso en el PDF; la otra queda como `duplicado`.
+- **Publicaciones mal catalogadas** (un Documento de Trabajo y una Encuesta CEP) y autores ausentes en la ficha: se resuelven en `correcciones.csv`, con la fuente de cada decisión. `extract` aplica ese archivo automáticamente.
+
 ## Estados en `manifest.csv`
 
 - `ok`: se aplica.
 - `revisar: …`: falta algún campo, o el número del PDF no coincide con el de la ficha. Se corrige la fila y se cambia a `ok`, o se aplica igual con `apply --include-review`.
 - `sin_pdf`: la ficha existe, pero el sitio no publica el archivo (por ejemplo, los N° 1 a 12, de 1986-87).
+- `duplicado` / `excluido`: no se aplican; el motivo va en la misma columna o en `correcciones.csv`.
+
+## Resultado (28 de septiembre de 2026)
+
+796 fichas, 769 PDF únicos con metadatos corregidos (N° 13 a 785). Faltan en el sitio los N° 1-12, 105, 176, 311 y 415: sus fichas no enlazan archivo o no existen.
 
 ## Límites conocidos
 

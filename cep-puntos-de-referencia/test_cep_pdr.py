@@ -96,3 +96,9 @@ def test_apellidos_con_iniciales_y_particulas():
     assert c.apellido("Rodrigo Vergara M.") == "Vergara"
     assert c.apellido("Rosario Palacios R. de G.") == "Palacios"
     assert c.apellido("Tomás de la Maza B.") == "DeLaMaza"
+
+
+def test_numero_formato_antiguo_y_citas_ignoradas():
+    d = c.extraer("Número 106 Noviembre 1992 MACROECONOMIA Y FINANZAS PUBLICAS\n"
+                  "según el DFL N° 4, mayo 1959 y el Documento de Trabajo N° 94, julio 1987.\n")
+    assert (d["numero"], d["anio"], d["mes"]) == ("106", "1992", "11")

@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import html
 import json
 import re
 import sys
 import time
 import unicodedata
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -45,7 +47,7 @@ MAYUS = "A-ZÁÉÍÓÚÑÜ"
 
 CATALOGO_FIELDS = ["id", "numero", "anio", "mes", "titulo", "autores", "pdf_url", "page_url"]
 MANIFEST_FIELDS = [
-    "archivo", "numero", "anio", "mes", "area", "titulo", "autores",
+    "id", "archivo", "numero", "anio", "mes", "area", "titulo", "autores",
     "palabras_clave", "nuevo_nombre", "estado", "pdf_url", "page_url",
 ]
 
@@ -102,6 +104,22 @@ def numero_de(acf: dict) -> str:
     return ""
 
 
+def citation_vigente(it: dict) -> bool:
+    """Falso si los campos citation_* quedaron copiados de otra ficha.
+
+    Pasa en fichas nuevas: la 40942 (N° 785) conserva título, autores y PDF del N° 784.
+    Se detecta porque su número o su título no coinciden con los propios de la ficha.
+    """
+    acf = it["acf"]
+    n_ficha = numero_de({"numero": acf.get("numero")})
+    n_cita = numero_de({"numero": acf.get("citation_technical_report_number")})
+    if n_ficha and n_cita and n_ficha != n_cita:
+        return False
+    t_ficha = re.sub(r"\W+", "", limpiar_html(it["title"]["rendered"]).lower())[:25]
+    t_cita = re.sub(r"\W+", "", limpiar_html(acf.get("citation_title") or "").lower())[:25]
+    return not (t_ficha and t_cita and t_ficha != t_cita)
+
+
 def pdf_de(s: requests.Session, acf: dict, page_url: str, delay: float) -> str:
     if acf.get("citation_pdf_url"):
         return acf["citation_pdf_url"]
@@ -156,6 +174,9 @@ def catalog(args) -> None:
     salida = []
     for it in filas:
         acf = it["acf"]
+        if not citation_vigente(it):
+            print(f"  ficha {it['id']}: campos citation_* copiados de otra; se usan los propios")
+            acf = {k: v for k, v in acf.items() if not k.startswith("citation_")}
         anio, mes = fecha_de(acf, it.get("date", ""))
         salida.append({
             "id": it["id"],
@@ -245,14 +266,25 @@ def extraer(texto: str) -> dict:
 
     # El encabezado se repite en cada página («N° 766, ABRIL 2026 ÁREA PUNTOS DE REFERENCIA»);
     # en la portada suele venir entremezclado con otras columnas, así que se revisan todos.
-    for m in re.finditer(rf"N[°º o.]*\s*(\d{{1,4}}),?\s+([{MAYUS}a-záéíóúñ]+)\s+(\d{{4}})", t):
-        if not d["numero"]:
-            d["numero"], d["anio"] = m.group(1), m.group(3)
-            d["mes"] = str(MESES.get(m.group(2).lower(), ""))
+    # Solo cuenta el número que está junto a las marcas de la serie; el cuerpo cita
+    # «DFL N° 4 de 1959» o «Documento de Trabajo N° 94» y esos no son el número del PdR.
+    marca = re.compile(r"puntos\s+de\s+refe|cepchile|estudios\s+p[uú]blicos|edici[oó]n\s+digital", re.I)
+    encabezados = []
+    # Los números de 1987-1993 dicen «Número 106 Noviembre 1992», siempre en la portada.
+    for m in re.finditer(rf"(N[°º o.]*|N[úu]mero)\s*(\d{{1,4}}),?\s+([{MAYUS}a-záéíóúñ]+)\s+(\d{{4}})", t):
+        if m.group(1)[:2] != "Nú" and m.group(1)[:2] != "Nu" and \
+                not marca.search(t[max(0, m.start() - 60):m.end() + 80]):
+            continue
+        if m.group(3).lower() not in MESES:
+            continue
+        encabezados.append((m.group(2), m.group(4), str(MESES[m.group(3).lower()])))
         # A veces sin espacios: «N° 650, MARZO 2023POLÍTICA Y DERECHOPUNTOS DE REFERENCIA».
         a = re.match(rf"\s*([{MAYUS}][{MAYUS} ,]*?[{MAYUS}])\s*PUNTOS DE REFERENCIA", t[m.end():m.end() + 120])
         if a and not d["area"]:
             d["area"] = capitalizar(a.group(1))
+    if encabezados:
+        # El encabezado se repite página a página; una cita a otro PdR aparece una vez.
+        d["numero"], d["anio"], d["mes"] = Counter(encabezados).most_common(1)[0][0]
     if not d["area"]:  # «puntos de referencia POLÍTICA Y DERECHO» en la portada
         a = re.search(rf"puntos de referencia[ \t]+([{MAYUS}][{MAYUS} ,]*[{MAYUS}])[ \t]*$", t, re.M)
         if a:
@@ -290,7 +322,7 @@ def extraer(texto: str) -> dict:
 
     k = re.search(r"Palabras\s+clave\s*:\s*(.+?)(?:\n\s*\n|\n[{0}]{{3,}}|$)".format(MAYUS), t, re.S)
     if k:
-        claves = [c.strip(" .\n") for c in re.split(r"[,;]", k.group(1).replace("\n", " "))]
+        claves = [re.sub(r"\s+", " ", c).strip(" .") for c in re.split(r"[,;]", k.group(1))]
         d["palabras_clave"] = ", ".join(c for c in claves if c)
     return d
 
@@ -348,12 +380,37 @@ def extract(args) -> None:
         if p["numero"] and ficha["numero"] and p["numero"] != ficha["numero"]:
             avisos.append(f"el PDF dice N° {p['numero']}")
         estado = "revisar: " + "; ".join(avisos) if avisos else "ok"
-        filas.append({**base, **d, "estado": estado})
+        filas.append({**base, **d, "estado": estado, "_num_pdf": p["numero"]})
+
+    # Correcciones revisadas a mano (id, campo, valor, fuente). Corregir una fila la da por revisada.
+    ruta = Path(args.correcciones)
+    if ruta.exists():
+        por_id = {f["id"]: f for f in filas}
+        for c in leer_csv(ruta):
+            f = por_id.get(c["id"])
+            if f is None or f["estado"] == "sin_pdf":
+                continue
+            f[c["campo"]] = c["valor"]
+            if c["campo"] != "estado":
+                f["estado"] = "ok"
+
+    # Hay fichas que enlazan el mismo archivo: reediciones de la misma ficha, o una
+    # ficha que apunta al PDF de otro número (la del N° 105 enlaza el del N° 106).
+    # Se queda la ficha cuyo número coincide con el impreso en el PDF.
+    grupos: dict[str, list[dict]] = {}
+    for f in filas:
+        if f["estado"] == "ok":
+            h = hashlib.sha1((raw / f["archivo"]).read_bytes()).hexdigest()
+            grupos.setdefault(h, []).append(f)
+    for grupo in grupos.values():
+        grupo.sort(key=lambda f: f["_num_pdf"] != f["numero"])
+        for f in grupo[1:]:
+            f["estado"] = f"duplicado: mismo PDF que la ficha {grupo[0]['id']} (N° {grupo[0]['numero']})"
 
     # Nombres repetidos (reediciones, números duplicados): se desambiguan con sufijo.
     usados: dict[str, int] = {}
     for f in filas:
-        if f["estado"] == "sin_pdf":
+        if f["estado"] == "sin_pdf" or f["estado"].startswith(("duplicado", "excluido")):
             continue
         n = nuevo_nombre(f)
         usados[n] = usados.get(n, 0) + 1
@@ -419,7 +476,7 @@ def apply(args) -> None:
     final.mkdir(parents=True, exist_ok=True)
     hechos = omitidos = fallos = 0
     for f in leer_csv(data / "manifest.csv"):
-        if f["estado"] == "sin_pdf" or (f["estado"].startswith("revisar") and not args.include_review):
+        if f["estado"] != "ok" and not (args.include_review and f["estado"].startswith("revisar")):
             omitidos += 1
             continue
         anio = f["anio"] if f["anio"].isdigit() else ""
@@ -461,11 +518,14 @@ def main(argv=None) -> None:
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("catalog", help="lee las fichas de la serie desde la API")
     sub.add_parser("download", help="descarga los PDF del catálogo")
-    sub.add_parser("extract", help="cruza fichas y portadas en manifest.csv")
+    ex = sub.add_parser("extract", help="cruza fichas y portadas en manifest.csv")
     ap = sub.add_parser("apply", help="escribe metadatos y renombra en data/final")
     ap.add_argument("--include-review", action="store_true",
                     help="aplicar también las filas marcadas «revisar»")
-    sub.add_parser("all", help="catalog + download + extract")
+    al = sub.add_parser("all", help="catalog + download + extract")
+    for sp in (ex, al):
+        sp.add_argument("--correcciones", default=str(Path(__file__).with_name("correcciones.csv")),
+                        help="CSV de correcciones manuales (id, campo, valor, fuente)")
 
     args = p.parse_args(argv)
     if args.cmd == "all":

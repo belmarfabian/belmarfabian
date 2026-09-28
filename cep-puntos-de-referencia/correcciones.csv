@@ -1,0 +1,22 @@
+id,numero,campo,valor,fuente
+17484,29,estado,ok,testimonio sin firma; se publica sin autor
+17592,136,autores,M. Alejandra Carrasco B.,nombre en portada
+17593,137,autores,M. Alejandra Carrasco B.,nombre en portada
+17594,138,autores,M. Alejandra Carrasco B.,nombre en portada
+17610,154,autores,Magdalena Gandolfo G.,nombre en portada
+17728,260,estado,ok,manda la ficha (coincide con el nombre del archivo en el servidor); el PDF dice N° 252
+17784,317,estado,ok,manda la ficha (coincide con el nombre del archivo en el servidor); el PDF dice N° 294
+17829,362,autores,Bernardita del Solar V.,archivo pder362_BdelSolar.pdf
+17831,364,autores,Bernardita del Solar V.,archivo pder364_BdelSolar.pdf
+17834,367,autores,Bernardita del Solar V.,nota biográfica en el PDF
+17847,380,estado,ok,manda la ficha (coincide con el nombre del archivo en el servidor); el PDF dice N° 374
+17859,391,autores,Bernardita del Solar V.,nota biográfica en el PDF
+18017,542,estado,ok,manda la ficha (coincide con el nombre del archivo en el servidor); el PDF dice N° 543
+18019,544,estado,ok,manda la ficha (coincide con el nombre del archivo en el servidor); el PDF dice N° 545
+18034,557,estado,ok,manda la ficha (coincide con el nombre del archivo en el servidor); el PDF dice N° 556
+19401,622,estado,ok,manda la ficha (coincide con el nombre del archivo en el servidor); el PDF dice N° 625
+19406,623,estado,ok,manda la ficha (coincide con el nombre del archivo en el servidor); el PDF dice N° 624
+19580,627,estado,ok,manda la ficha (coincide con el nombre del archivo en el servidor); el PDF dice N° 623
+8328,282,estado,excluido,mal catalogado: es un Documento de Trabajo (ddet282); el PdR 282 es la ficha 17751
+8290,308,estado,excluido,mal catalogado: es la Encuesta CEP N° 39 (marzo-abril 2000); el PdR 308 es la ficha 17775
+17561,105,estado,excluido,la ficha enlaza el PDF del N° 106 (pder_003_1992_11_n106.pdf); el sitio no publica el del N° 105
