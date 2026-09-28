@@ -3,52 +3,50 @@
 
 Flujo en cuatro pasos, cada uno retomable:
 
-  crawl     recorre cepchile.cl y lista las URL de PDF candidatas   -> data/urls.csv
-  download  descarga las candidatas                                 -> data/raw/
-  extract   lee la portada de cada PDF y propone metadatos          -> data/manifest.csv
-  apply     escribe metadatos (Info + XMP) y copia renombrada       -> data/final/
+  catalog   lee la ficha de cada PdR desde la API de cepchile.cl  -> data/catalogo.csv
+  download  descarga los PDF                                       -> data/raw/
+  extract   cruza la ficha con la portada del PDF                  -> data/manifest.csv
+  apply     escribe metadatos (Info + XMP) y copia renombrada      -> data/final/
 
-El manifiesto es editable: si la extracción se equivoca en un título o un autor,
-se corrige la fila y se vuelve a correr `apply`. Los originales no se tocan.
+La ficha web (título, autores, fecha, número) manda; del PDF se toman el área y
+las palabras clave, y se completan los campos que la ficha no trae. El manifiesto
+es editable: si algo queda mal, se corrige la fila y se vuelve a correr `apply`.
+Los originales no se tocan.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
+import html
+import json
 import re
 import sys
 import time
 import unicodedata
-import urllib.robotparser
-from collections import deque
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urldefrag, urljoin, urlparse
 from xml.sax.saxutils import escape
 
 import requests
-from bs4 import BeautifulSoup
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DecodedStreamObject, NameObject
 
-BASE = "https://www.cepchile.cl/"
-DOMAINS = ("cepchile.cl",)
+API = "https://www.cepchile.cl/wp-json/wp/v2/"
+CATEGORIA_PDR = "6"  # acf.categoria de «Puntos de Referencia» en el tipo «investigation»
 UA = "Mozilla/5.0 (compatible; cep-pdr-archiver/1.0; investigacion academica)"
-PDR_HINT = re.compile(r"puntos?[\s_-]*de[\s_-]*referencia|\bpd[e]?r[\s_-]?\d{2,4}", re.I)
 
 MESES = {
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6, "julio": 7,
     "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
 }
-PARTICULAS = {"de", "del", "la", "las", "los", "y", "e", "van", "von", "da", "di"}
+PARTICULAS = {"de", "del", "la", "las", "los", "le", "y", "e", "van", "von", "da", "di"}
 MAYUS = "A-ZÁÉÍÓÚÑÜ"
 
-URL_FIELDS = ["pdf_url", "page_url", "page_title", "hint"]
+CATALOGO_FIELDS = ["id", "numero", "anio", "mes", "titulo", "autores", "pdf_url", "page_url"]
 MANIFEST_FIELDS = [
     "archivo", "numero", "anio", "mes", "area", "titulo", "autores",
-    "palabras_clave", "nuevo_nombre", "estado", "pdf_url",
+    "palabras_clave", "nuevo_nombre", "estado", "pdf_url", "page_url",
 ]
 
 
@@ -63,11 +61,11 @@ def session() -> requests.Session:
 def get(s: requests.Session, url: str, delay: float, **kw) -> requests.Response | None:
     for intento in range(4):
         try:
-            r = s.get(url, timeout=60, **kw)
+            r = s.get(url, timeout=120, **kw)
             time.sleep(delay)
             if r.status_code == 200:
                 return r
-            if r.status_code in (404, 410):
+            if r.status_code in (400, 404, 410):
                 return None
         except requests.RequestException as e:
             print(f"  error de red ({e.__class__.__name__}) en {url}", file=sys.stderr)
@@ -75,125 +73,140 @@ def get(s: requests.Session, url: str, delay: float, **kw) -> requests.Response 
     return None
 
 
-def en_dominio(url: str) -> bool:
-    host = (urlparse(url).hostname or "").lower()
-    return any(host == d or host.endswith("." + d) for d in DOMAINS)
+# ------------------------------------------------------------------- catálogo
+
+def limpiar_html(t: str) -> str:
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", t or ""))).strip()
 
 
-def sitemaps(s: requests.Session, delay: float) -> list[str]:
-    """URL de páginas declaradas en robots.txt y en los sitemaps habituales."""
-    candidatos = [urljoin(BASE, "sitemap.xml"), urljoin(BASE, "sitemap_index.xml")]
-    r = get(s, urljoin(BASE, "robots.txt"), delay)
-    if r:
-        candidatos += re.findall(r"(?im)^sitemap:\s*(\S+)", r.text)
-    vistos, paginas, cola = set(), [], deque(dict.fromkeys(candidatos))
-    while cola:
-        sm = cola.popleft()
-        if sm in vistos:
-            continue
-        vistos.add(sm)
-        r = get(s, sm, delay)
-        if not r:
-            continue
-        locs = re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", r.text)
-        if "<sitemapindex" in r.text:
-            cola.extend(locs)
-        else:
-            paginas.extend(locs)
-    return paginas
+def fecha_de(acf: dict, fecha_post: str) -> tuple[str, str]:
+    # «N° 1, mayo 1986» manda: en los números antiguos la fecha de la ficha es la de
+    # su carga al sitio (2001), no la de publicación.
+    for campo in ("numero", "citation_technical_report_number"):
+        m = re.search(r"([a-záéíóú]+)\s+(?:de\s+)?(\d{4})", str(acf.get(campo) or ""), re.I)
+        if m and m.group(1).lower() in MESES:
+            return m.group(2), str(MESES[m.group(1).lower()])
+    m = re.match(r"(\d{4})[/-]?(\d{2})", str(acf.get("citation_publication_date") or ""))
+    if m:
+        return m.group(1), str(int(m.group(2)))
+    if fecha_post:
+        return fecha_post[:4], str(int(fecha_post[5:7]))
+    return "", ""
 
 
-def crawl(args) -> None:
-    s = session()
-    robots = urllib.robotparser.RobotFileParser(urljoin(BASE, "robots.txt"))
-    try:
-        robots.read()
-    except Exception:
-        robots = None
-
-    semillas = list(args.seed or [])
-    if not args.no_sitemap:
-        desde_sitemap = sitemaps(s, args.delay)
-        print(f"sitemaps: {len(desde_sitemap)} páginas")
-        semillas += desde_sitemap
-    if not semillas:
-        semillas = [BASE]
-
-    follow = re.compile(args.follow, re.I) if args.follow else None
-    cola, vistas = deque(dict.fromkeys(semillas)), set()
-    pdfs: dict[str, dict] = {}
-    while cola and len(vistas) < args.max_pages:
-        url = urldefrag(cola.popleft())[0]
-        if url in vistas or not en_dominio(url):
-            continue
-        if robots and not robots.can_fetch(UA, url):
-            continue
-        vistas.add(url)
-        r = get(s, url, args.delay)
-        if not r or "html" not in r.headers.get("content-type", ""):
-            continue
-        soup = BeautifulSoup(r.text, "html.parser")
-        cuerpo = soup.find("main") or soup.find("article") or soup.body or soup
-        texto_pagina = cuerpo.get_text(" ", strip=True)
-        titulo_pagina = meta(soup, "citation_title", "og:title") or (soup.title.string if soup.title else "")
-        for a in soup.find_all("a", href=True):
-            link = urldefrag(urljoin(url, a["href"]))[0]
-            if not en_dominio(link):
-                continue
-            if urlparse(link).path.lower().endswith(".pdf"):
-                pista = bool(PDR_HINT.search(link) or PDR_HINT.search(a.get_text(" "))
-                             or PDR_HINT.search(texto_pagina))
-                previo = pdfs.get(link)
-                if previo is None or (pista and not previo["hint"]):
-                    pdfs[link] = {"pdf_url": link, "page_url": url,
-                                  "page_title": (titulo_pagina or "").strip(), "hint": int(pista)}
-            elif link not in vistas and (follow is None or follow.search(link)):
-                cola.append(link)
-        if len(vistas) % 100 == 0:
-            print(f"  {len(vistas)} páginas, {len(pdfs)} PDF, {len(cola)} en cola")
-
-    salida = Path(args.data) / "urls.csv"
-    salida.parent.mkdir(parents=True, exist_ok=True)
-    with salida.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=URL_FIELDS)
-        w.writeheader()
-        w.writerows(sorted(pdfs.values(), key=lambda d: d["pdf_url"]))
-    n_pista = sum(d["hint"] for d in pdfs.values())
-    print(f"{len(vistas)} páginas recorridas; {len(pdfs)} PDF, {n_pista} con pista de PdR -> {salida}")
-
-
-def meta(soup: BeautifulSoup, *nombres: str) -> str:
-    for n in nombres:
-        tag = soup.find("meta", attrs={"name": n}) or soup.find("meta", attrs={"property": n})
-        if tag and tag.get("content"):
-            return tag["content"].strip()
+def numero_de(acf: dict) -> str:
+    for campo in ("citation_technical_report_number", "numero"):
+        m = re.search(r"N\s*[°ºo.]*\s*(\d{1,4})", str(acf.get(campo) or ""))
+        if m:
+            return m.group(1)
     return ""
 
 
-def nombre_local(url: str) -> str:
-    base = Path(urlparse(url).path).name or "archivo.pdf"
-    h = hashlib.sha1(url.encode()).hexdigest()[:8]
-    return f"{Path(base).stem[:80]}_{h}.pdf"
+def pdf_de(s: requests.Session, acf: dict, page_url: str, delay: float) -> str:
+    if acf.get("citation_pdf_url"):
+        return acf["citation_pdf_url"]
+    archivo = acf.get("archivo")
+    if isinstance(archivo, dict) and archivo.get("url"):
+        return archivo["url"]
+    if isinstance(archivo, int) and archivo:
+        r = get(s, f"{API}media/{archivo}?_fields=source_url", delay)
+        if r and r.json().get("source_url", "").lower().endswith(".pdf"):
+            return r.json()["source_url"]
+    enlaces = re.findall(r"https?://[^\"'\\\s]+?\.pdf", json.dumps(acf))
+    if enlaces:
+        return enlaces[0]
+    r = get(s, page_url, delay)  # último recurso: el enlace de descarga en la página
+    if r:
+        enlaces = re.findall(r"https?://static\.cepchile\.cl/[^\"'\s]+?\.pdf", r.text)
+        if enlaces:
+            return enlaces[0]
+    return ""
+
+
+def autores_de(s: requests.Session, acf: dict, delay: float, cache: dict) -> str:
+    nombres = [a.get("citation_author", "").strip() for a in (acf.get("citation_authors") or [])]
+    nombres = [n for n in nombres if n]
+    if not nombres:
+        for i in acf.get("autores") or []:
+            if i not in cache:
+                r = get(s, f"{API}team/{i}?_fields=title", delay)
+                cache[i] = limpiar_html(r.json()["title"]["rendered"]) if r else ""
+            if cache[i]:
+                nombres.append(cache[i])
+    return "; ".join(nombres)
+
+
+def catalog(args) -> None:
+    s = session()
+    filas, pagina, total = [], 1, None
+    while total is None or pagina <= total:
+        r = get(s, f"{API}investigation?per_page=100&page={pagina}&_fields=id,date,link,title,acf",
+                args.delay)
+        if r is None:
+            sys.exit(f"No se pudo leer la página {pagina} de la API.")
+        total = int(r.headers.get("X-WP-TotalPages", 1))
+        for it in r.json():
+            acf = it.get("acf") or {}
+            if str(acf.get("categoria")) == CATEGORIA_PDR:
+                filas.append(it)
+        print(f"  API {pagina}/{total}: {len(filas)} PdR")
+        pagina += 1
+
+    cache: dict = {}
+    salida = []
+    for it in filas:
+        acf = it["acf"]
+        anio, mes = fecha_de(acf, it.get("date", ""))
+        salida.append({
+            "id": it["id"],
+            "numero": numero_de(acf),
+            "anio": anio,
+            "mes": mes,
+            "titulo": limpiar_html(acf.get("citation_title") or it["title"]["rendered"]),
+            "autores": autores_de(s, acf, args.delay, cache),
+            "pdf_url": pdf_de(s, acf, it["link"], args.delay),
+            "page_url": it["link"],
+        })
+    salida.sort(key=lambda f: (int(f["numero"]) if f["numero"] else 10**6, f["anio"]))
+    destino = Path(args.data) / "catalogo.csv"
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    escribir_csv(destino, CATALOGO_FIELDS, salida)
+    con_pdf = sum(1 for f in salida if f["pdf_url"])
+    print(f"{len(salida)} PdR en el catálogo, {con_pdf} con PDF -> {destino}")
+
+
+def escribir_csv(ruta: Path, campos: list[str], filas: list[dict]) -> None:
+    with ruta.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=campos, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(filas)
+
+
+def leer_csv(ruta: Path) -> list[dict]:
+    with ruta.open(encoding="utf-8") as f:
+        return [{k: (v or "") for k, v in fila.items()} for fila in csv.DictReader(f)]
 
 
 def download(args) -> None:
-    urls = Path(args.data) / "urls.csv"
-    raw = Path(args.data) / "raw"
+    data = Path(args.data)
+    raw = data / "raw"
     raw.mkdir(parents=True, exist_ok=True)
-    filas = list(csv.DictReader(urls.open(encoding="utf-8")))
-    if not args.all_pdfs:
-        filas = [f for f in filas if f["hint"] == "1"]
+    filas = [f for f in leer_csv(data / "catalogo.csv") if f["pdf_url"]]
     s = session()
+    fallos = 0
     for i, fila in enumerate(filas, 1):
-        destino = raw / nombre_local(fila["pdf_url"])
+        destino = raw / f"{fila['id']}.pdf"
         if destino.exists() and destino.stat().st_size > 0:
             continue
         r = get(s, fila["pdf_url"], args.delay)
-        if r is None or not r.content.startswith(b"%PDF"):
+        if r is None or not r.content.lstrip().startswith(b"%PDF"):
+            fallos += 1
             print(f"  [{i}/{len(filas)}] falló {fila['pdf_url']}", file=sys.stderr)
             continue
         destino.write_bytes(r.content)
-        print(f"  [{i}/{len(filas)}] {destino.name}")
+        if i % 25 == 0:
+            print(f"  [{i}/{len(filas)}] descargados")
+    print(f"{len(list(raw.glob('*.pdf')))} PDF en {raw}; {fallos} fallos")
 
 
 # --------------------------------------------------------------- extracción
@@ -225,7 +238,8 @@ def separar_autores(linea: str) -> list[str]:
     return [capitalizar(p) for p in partes if p.strip()]
 
 
-def extraer(texto: str, titulo_html: str = "", titulo_info: str = "") -> dict:
+def extraer(texto: str) -> dict:
+    """Metadatos legibles en la portada de un PdR (texto extraído del PDF)."""
     t = normalizar(texto)
     d = {"numero": "", "anio": "", "mes": "", "area": "", "titulo": "", "autores": "", "palabras_clave": ""}
 
@@ -235,10 +249,14 @@ def extraer(texto: str, titulo_html: str = "", titulo_info: str = "") -> dict:
         if not d["numero"]:
             d["numero"], d["anio"] = m.group(1), m.group(3)
             d["mes"] = str(MESES.get(m.group(2).lower(), ""))
-        a = re.match(rf"\s*([{MAYUS} ,]+?)\s+PUNTOS DE REFERENCIA", t[m.end():m.end() + 120])
-        if a and a.group(1).strip():
+        # A veces sin espacios: «N° 650, MARZO 2023POLÍTICA Y DERECHOPUNTOS DE REFERENCIA».
+        a = re.match(rf"\s*([{MAYUS}][{MAYUS} ,]*?[{MAYUS}])\s*PUNTOS DE REFERENCIA", t[m.end():m.end() + 120])
+        if a and not d["area"]:
             d["area"] = capitalizar(a.group(1))
-            break
+    if not d["area"]:  # «puntos de referencia POLÍTICA Y DERECHO» en la portada
+        a = re.search(rf"puntos de referencia[ \t]+([{MAYUS}][{MAYUS} ,]*[{MAYUS}])[ \t]*$", t, re.M)
+        if a:
+            d["area"] = capitalizar(a.group(1))
 
     # Notas biográficas: «NOMBRE APELLIDO es investigador...».
     bios = re.findall(rf"(?m)^\s*([{MAYUS}][{MAYUS}'.\- ]{{3,}}?)\s+(?:es|fue)\s+[a-záéíóú]", t)
@@ -259,8 +277,7 @@ def extraer(texto: str, titulo_html: str = "", titulo_info: str = "") -> dict:
         autores = separar_autores(linea_autores)
     d["autores"] = "; ".join(autores)
 
-    titulo = titulo_html.strip()
-    if not titulo and pos_autores > 0:
+    if pos_autores > 0:
         previas = [l.strip() for l in t[:pos_autores].splitlines() if l.strip()]
         bloque = []
         for l in reversed(previas):
@@ -269,10 +286,7 @@ def extraer(texto: str, titulo_html: str = "", titulo_info: str = "") -> dict:
             bloque.insert(0, l)
             if len(bloque) >= 4:
                 break
-        titulo = " ".join(bloque)
-    if not titulo and titulo_info and not re.search(r"\.indd|untitled|sin t[ií]tulo|^pdr", titulo_info, re.I):
-        titulo = titulo_info.strip()
-    d["titulo"] = re.sub(r"\s+", " ", titulo).strip(" .")
+        d["titulo"] = re.sub(r"\s+", " ", " ".join(bloque)).strip(" .")
 
     k = re.search(r"Palabras\s+clave\s*:\s*(.+?)(?:\n\s*\n|\n[{0}]{{3,}}|$)".format(MAYUS), t, re.S)
     if k:
@@ -287,11 +301,15 @@ def ascii_slug(t: str) -> str:
 
 
 def apellido(nombre: str) -> str:
-    partes = nombre.split()
+    # «Rodrigo Vergara M.» -> Vergara; «Rosario Palacios R. de G.» -> Palacios;
+    # «Tomás de la Maza B.» -> DeLaMaza.
+    partes = [p for p in nombre.split() if not re.fullmatch(r"[A-ZÁÉÍÓÚÑ]\.", p)]
+    while len(partes) > 1 and partes[-1].lower() in PARTICULAS:
+        partes.pop()
     if not partes:
         return ""
     ap = [partes[-1]]
-    for p in reversed(partes[:-1]):  # «de la Fuente», «van der Berg»
+    for p in reversed(partes[1:-1]):
         if p.lower() in PARTICULAS - {"y", "e"}:
             ap.insert(0, p)
         else:
@@ -309,58 +327,65 @@ def nuevo_nombre(d: dict) -> str:
 
 def extract(args) -> None:
     data = Path(args.data)
-    urls = {}
-    if (data / "urls.csv").exists():
-        for f in csv.DictReader((data / "urls.csv").open(encoding="utf-8")):
-            urls[nombre_local(f["pdf_url"])] = f
-    raw = Path(args.raw) if args.raw else data / "raw"
+    raw = data / "raw"
     filas = []
-    for pdf in sorted(raw.glob("*.pdf")):
-        origen = urls.get(pdf.name, {})
-        try:
-            reader = PdfReader(pdf)
-            texto = texto_portada(reader)
-            info_titulo = (reader.metadata or {}).get("/Title", "") or ""
-        except Exception as e:
-            filas.append({"archivo": pdf.name, "estado": f"ilegible: {e.__class__.__name__}"})
+    for ficha in leer_csv(data / "catalogo.csv"):
+        pdf = raw / f"{ficha['id']}.pdf"
+        base = {**ficha, "archivo": pdf.name}
+        if not pdf.exists():
+            filas.append({**base, "estado": "sin_pdf"})
             continue
-        es_pdr = bool(re.search(r"puntos\s+de\s+referencia", texto, re.I))
-        titulo_html = origen.get("page_title", "") if args.use_html_title else ""
-        d = extraer(texto, titulo_html=titulo_html, titulo_info=str(info_titulo))
+        try:
+            texto = texto_portada(PdfReader(pdf))
+        except Exception as e:
+            texto = ""
+            print(f"  {pdf.name}: ilegible ({e.__class__.__name__})", file=sys.stderr)
+        p = extraer(texto)
+        d = {k: ficha.get(k) or p.get(k, "") for k in ("numero", "anio", "mes", "titulo", "autores")}
+        d["area"], d["palabras_clave"] = p["area"], p["palabras_clave"]
         faltan = [c for c in ("numero", "anio", "titulo", "autores") if not d[c]]
-        estado = "no_pdr" if not es_pdr else ("revisar: falta " + ", ".join(faltan) if faltan else "ok")
-        filas.append({"archivo": pdf.name, **d, "nuevo_nombre": nuevo_nombre(d),
-                      "estado": estado, "pdf_url": origen.get("pdf_url", "")})
+        avisos = ["falta " + ", ".join(faltan)] if faltan else []
+        if p["numero"] and ficha["numero"] and p["numero"] != ficha["numero"]:
+            avisos.append(f"el PDF dice N° {p['numero']}")
+        estado = "revisar: " + "; ".join(avisos) if avisos else "ok"
+        filas.append({**base, **d, "estado": estado})
 
-    # Nombres repetidos (p. ej., dos PdR sin número): se desambiguan con sufijo.
+    # Nombres repetidos (reediciones, números duplicados): se desambiguan con sufijo.
     usados: dict[str, int] = {}
     for f in filas:
-        n = f.get("nuevo_nombre")
-        if not n:
+        if f["estado"] == "sin_pdf":
             continue
+        n = nuevo_nombre(f)
         usados[n] = usados.get(n, 0) + 1
-        if usados[n] > 1:
-            f["nuevo_nombre"] = n[:-4] + f"_{usados[n]}.pdf"
+        f["nuevo_nombre"] = n if usados[n] == 1 else n[:-4] + f"_{usados[n]}.pdf"
 
-    salida = data / "manifest.csv"
-    salida.parent.mkdir(parents=True, exist_ok=True)
-    with salida.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=MANIFEST_FIELDS)
-        w.writeheader()
-        w.writerows(filas)
-    resumen = {}
+    destino = data / "manifest.csv"
+    escribir_csv(destino, MANIFEST_FIELDS, filas)
+    resumen: dict[str, int] = {}
     for f in filas:
         clave = f["estado"].split(":")[0]
         resumen[clave] = resumen.get(clave, 0) + 1
-    print(f"{len(filas)} PDF -> {salida}  {resumen}")
+    print(f"{len(filas)} fichas -> {destino}  {resumen}")
 
 
 # ------------------------------------------------------------------ escritura
+
+def asunto(d: dict) -> str:
+    fecha = ""
+    if d["mes"].isdigit() and d["anio"]:
+        nombre_mes = next(k for k, v in MESES.items() if v == int(d["mes"]))
+        fecha = f", {nombre_mes} {d['anio']}"
+    elif d["anio"]:
+        fecha = f", {d['anio']}"
+    area = f". {d['area']}" if d.get("area") else ""
+    return f"Puntos de Referencia N° {d['numero']}{fecha}{area}. Centro de Estudios Públicos."
+
 
 def xmp(d: dict, fecha: str) -> bytes:
     autores = [a.strip() for a in d["autores"].split(";") if a.strip()]
     claves = [c.strip() for c in d["palabras_clave"].split(",") if c.strip()]
     li = lambda xs: "".join(f"<rdf:li>{escape(x)}</rdf:li>" for x in xs)
+    fecha_xml = f"<dc:date><rdf:Seq><rdf:li>{fecha}</rdf:li></rdf:Seq></dc:date>" if fecha else ""
     return f"""<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
@@ -376,11 +401,11 @@ def xmp(d: dict, fecha: str) -> bytes:
    <dc:subject><rdf:Bag>{li(claves)}</rdf:Bag></dc:subject>
    <dc:publisher><rdf:Bag><rdf:li>Centro de Estudios Públicos</rdf:li></rdf:Bag></dc:publisher>
    <dc:language><rdf:Bag><rdf:li>es</rdf:li></rdf:Bag></dc:language>
-   <dc:date><rdf:Seq><rdf:li>{fecha}</rdf:li></rdf:Seq></dc:date>
+   {fecha_xml}
    <pdf:Keywords>{escape(d['palabras_clave'])}</pdf:Keywords>
    <prism:publicationName>Puntos de Referencia</prism:publicationName>
    <prism:number>{escape(d['numero'])}</prism:number>
-   <prism:url>{escape(d.get('pdf_url', ''))}</prism:url>
+   <prism:url>{escape(d.get('page_url', ''))}</prism:url>
    <xmp:MetadataDate>{datetime.now().astimezone().isoformat(timespec='seconds')}</xmp:MetadataDate>
   </rdf:Description>
  </rdf:RDF>
@@ -388,34 +413,17 @@ def xmp(d: dict, fecha: str) -> bytes:
 <?xpacket end="w"?>""".encode("utf-8")
 
 
-def asunto(d: dict) -> str:
-    fecha = ""
-    if d["mes"].isdigit() and d["anio"]:
-        nombre_mes = next(k for k, v in MESES.items() if v == int(d["mes"]))
-        fecha = f", {nombre_mes} {d['anio']}"
-    elif d["anio"]:
-        fecha = f", {d['anio']}"
-    area = f". {d['area']}" if d["area"] else ""
-    return f"Puntos de Referencia N° {d['numero']}{fecha}{area}. Centro de Estudios Públicos."
-
-
 def apply(args) -> None:
     data = Path(args.data)
-    raw = Path(args.raw) if args.raw else data / "raw"
-    final = data / "final"
+    raw, final = data / "raw", data / "final"
     final.mkdir(parents=True, exist_ok=True)
-    filas = list(csv.DictReader((data / "manifest.csv").open(encoding="utf-8")))
-    hechos = omitidos = 0
-    for f in filas:
-        f = {k: (v or "") for k, v in f.items()}
-        if f["estado"] == "no_pdr" or f["estado"].startswith("ilegible") or \
-                (f["estado"].startswith("revisar") and not args.include_review):
+    hechos = omitidos = fallos = 0
+    for f in leer_csv(data / "manifest.csv"):
+        if f["estado"] == "sin_pdf" or (f["estado"].startswith("revisar") and not args.include_review):
             omitidos += 1
             continue
         anio = f["anio"] if f["anio"].isdigit() else ""
         mes = int(f["mes"]) if f["mes"].isdigit() else 1
-        fecha_iso = f"{anio}-{mes:02d}" if anio else ""
-        writer = PdfWriter(clone_from=str(raw / f["archivo"]))
         info = {
             "/Title": f["titulo"],
             "/Author": f["autores"],
@@ -425,18 +433,23 @@ def apply(args) -> None:
         }
         if anio:
             info["/CreationDate"] = f"D:{anio}{mes:02d}01000000"
-        writer.add_metadata(info)
-        # El XMP manda en Acrobat, Zotero y la mayoría de los lectores:
-        # si queda el de InDesign, el título viejo reaparece.
-        stream = DecodedStreamObject()
-        stream.set_data(xmp(f, fecha_iso))
-        stream.update({NameObject("/Type"): NameObject("/Metadata"),
-                       NameObject("/Subtype"): NameObject("/XML")})
-        writer._root_object[NameObject("/Metadata")] = writer._add_object(stream)
-        with (final / f["nuevo_nombre"]).open("wb") as out:
-            writer.write(out)
-        hechos += 1
-    print(f"{hechos} PDF escritos en {final}; {omitidos} omitidos (no PdR o por revisar)")
+        try:
+            writer = PdfWriter(clone_from=str(raw / f["archivo"]))
+            writer.add_metadata(info)
+            # El XMP manda en Acrobat, Zotero y la mayoría de los lectores:
+            # si queda el de InDesign, el título viejo reaparece.
+            stream = DecodedStreamObject()
+            stream.set_data(xmp(f, f"{anio}-{mes:02d}" if anio else ""))
+            stream.update({NameObject("/Type"): NameObject("/Metadata"),
+                           NameObject("/Subtype"): NameObject("/XML")})
+            writer._root_object[NameObject("/Metadata")] = writer._add_object(stream)
+            with (final / f["nuevo_nombre"]).open("wb") as out:
+                writer.write(out)
+            hechos += 1
+        except Exception as e:
+            fallos += 1
+            print(f"  {f['archivo']}: no se pudo escribir ({e.__class__.__name__}: {e})", file=sys.stderr)
+    print(f"{hechos} PDF escritos en {final}; {omitidos} omitidos; {fallos} fallos")
 
 
 # ----------------------------------------------------------------------- CLI
@@ -444,45 +457,24 @@ def apply(args) -> None:
 def main(argv=None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--data", default="data", help="carpeta de trabajo (por defecto: data)")
-    p.add_argument("--delay", type=float, default=1.0, help="segundos entre solicitudes")
+    p.add_argument("--delay", type=float, default=0.5, help="segundos entre solicitudes")
     sub = p.add_subparsers(dest="cmd", required=True)
-
-    c = sub.add_parser("crawl", help="lista los PDF candidatos")
-    c.add_argument("--seed", action="append", help="URL inicial (repetible)")
-    c.add_argument("--follow", default="", help="regex: solo seguir páginas que coincidan")
-    c.add_argument("--max-pages", type=int, default=20000)
-    c.add_argument("--no-sitemap", action="store_true")
-
-    dl = sub.add_parser("download", help="descarga los PDF con pista de PdR")
-    dl.add_argument("--all-pdfs", action="store_true", help="descargar también los sin pista")
-
-    for nombre, ayuda in (("extract", "propone metadatos en manifest.csv"),
-                          ("apply", "escribe metadatos y renombra en data/final")):
-        sp = sub.add_parser(nombre, help=ayuda)
-        sp.add_argument("--raw", help="carpeta de PDF de entrada (por defecto: data/raw)")
-        if nombre == "extract":
-            sp.add_argument("--use-html-title", action="store_true",
-                            help="preferir el título de la página web al de la portada")
-        else:
-            sp.add_argument("--include-review", action="store_true",
-                            help="aplicar también las filas marcadas «revisar»")
-
-    a = sub.add_parser("all", help="crawl + download + extract")
-    a.add_argument("--seed", action="append")
-    a.add_argument("--follow", default="")
-    a.add_argument("--max-pages", type=int, default=20000)
-    a.add_argument("--no-sitemap", action="store_true")
-    a.add_argument("--all-pdfs", action="store_true")
+    sub.add_parser("catalog", help="lee las fichas de la serie desde la API")
+    sub.add_parser("download", help="descarga los PDF del catálogo")
+    sub.add_parser("extract", help="cruza fichas y portadas en manifest.csv")
+    ap = sub.add_parser("apply", help="escribe metadatos y renombra en data/final")
+    ap.add_argument("--include-review", action="store_true",
+                    help="aplicar también las filas marcadas «revisar»")
+    sub.add_parser("all", help="catalog + download + extract")
 
     args = p.parse_args(argv)
     if args.cmd == "all":
-        crawl(args)
+        catalog(args)
         download(args)
-        args.raw, args.use_html_title = None, False
         extract(args)
         print("Revise data/manifest.csv y luego corra: python cep_pdr.py apply")
     else:
-        {"crawl": crawl, "download": download, "extract": extract, "apply": apply}[args.cmd](args)
+        {"catalog": catalog, "download": download, "extract": extract, "apply": apply}[args.cmd](args)
 
 
 if __name__ == "__main__":

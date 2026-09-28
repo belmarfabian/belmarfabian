@@ -80,3 +80,19 @@ def test_apply_escribe_info_y_xmp(tmp_path):
     assert r.xmp_metadata.dc_title["x-default"] == d["titulo"]
     assert r.xmp_metadata.dc_creator == ["Fabián Belmar", "Aldo Mascareño", "Juan Rozas", "Andrés Araya"]
     assert (raw / "x.pdf").exists()  # el original no se toca
+
+
+def test_area_pegada_al_encabezado():
+    d = c.extraer("N° 650, MARZO 2023POLÍTICA Y DERECHOPUNTOS DE REFERENCIA\nRESUMEN\n")
+    assert (d["numero"], d["area"]) == ("650", "Política y Derecho")
+
+
+def test_area_en_linea_de_portada():
+    d = c.extraer("EDICIÓN DIGITAL\nN° 650, MARZO 2023\npuntos de referencia POLÍTICA Y DERECHO\n")
+    assert d["area"] == "Política y Derecho"
+
+
+def test_apellidos_con_iniciales_y_particulas():
+    assert c.apellido("Rodrigo Vergara M.") == "Vergara"
+    assert c.apellido("Rosario Palacios R. de G.") == "Palacios"
+    assert c.apellido("Tomás de la Maza B.") == "DeLaMaza"

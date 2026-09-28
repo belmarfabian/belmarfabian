@@ -1,45 +1,51 @@
 # Puntos de Referencia del CEP: descarga y metadatos
 
-`cep_pdr.py` descarga los PDF de la serie *Puntos de Referencia* del Centro de Estudios Públicos y corrige sus metadatos. Los campos de cada archivo quedan con título, autores, número, fecha, área y palabras clave, y el nombre del archivo sigue un patrón uniforme:
+`cep_pdr.py` descarga todos los PDF de la serie *Puntos de Referencia* del Centro de Estudios Públicos y corrige sus metadatos. Cada archivo queda con título, autores, número, fecha, área y palabras clave, y con un nombre uniforme:
 
 ```
 2026_PdR766_Belmar-Mascareno-etal.pdf
 ```
-
-Los metadatos se escriben dos veces: en el diccionario `Info` del PDF y en el paquete XMP. Hay que hacerlo en ambos lugares porque Acrobat, Zotero y la mayoría de los lectores dan prioridad al XMP, y el que deja InDesign suele traer el nombre del archivo `.indd` como título.
 
 ## Uso
 
 ```bash
 pip install -r requirements.txt
 
-python cep_pdr.py all       # rastreo + descarga + extracción -> data/manifest.csv
+python cep_pdr.py all       # catálogo + descarga + cruce -> data/manifest.csv
 # revisar data/manifest.csv (se puede editar a mano)
 python cep_pdr.py apply     # escribe metadatos y copia renombrada en data/final/
 ```
 
-Cada paso también se puede correr por separado (`crawl`, `download`, `extract`, `apply`) y todos se pueden retomar: la descarga salta los archivos que ya están en `data/raw/`. Los originales nunca se modifican.
+Cada paso también se puede correr por separado (`catalog`, `download`, `extract`, `apply`). La descarga se puede retomar, porque salta los archivos que ya están en `data/raw/`. Los originales nunca se modifican.
 
-## Qué hace cada paso
+## De dónde sale cada dato
 
-| Paso | Salida | Detalle |
+El sitio del CEP es un WordPress con API pública (`/wp-json/wp/v2/investigation`), y cada publicación trae una ficha con campos `citation_*`. La serie corresponde a `acf.categoria == 6`.
+
+| Campo | Fuente principal | Respaldo |
 |---|---|---|
-| `crawl` | `data/urls.csv` | Lee los sitemaps de `cepchile.cl` y recorre el sitio respetando `robots.txt`, con un segundo entre solicitudes. Marca con pista los PDF cuyo enlace, texto o página mencionan *Puntos de Referencia*. |
-| `download` | `data/raw/` | Descarga solo los PDF con pista. Con `--all-pdfs` descarga todos. |
-| `extract` | `data/manifest.csv` | Lee las primeras páginas: encabezado `N° 766, ABRIL 2026 ÁREA PUNTOS DE REFERENCIA`, título, línea de autores y notas biográficas (`NOMBRE es investigador...`), y *Palabras clave*. |
-| `apply` | `data/final/` | Escribe `Info` y XMP (Dublin Core y PRISM) y guarda la copia con el nombre nuevo. |
+| Número | «N° 766, abril 2026» en la ficha | encabezado del PDF |
+| Fecha | mes y año de ese mismo texto | `citation_publication_date` |
+| Título | `citation_title` | portada del PDF |
+| Autores | `citation_authors` | fichas del equipo (`/team/{id}`) o portada del PDF |
+| Área | encabezado del PDF («POLÍTICA Y DERECHO») | — |
+| Palabras clave | «Palabras clave:» en el PDF | — |
+| PDF | `citation_pdf_url` | adjunto `archivo`, o enlace en la página |
 
-La columna `estado` del manifiesto clasifica cada archivo:
+La fecha se toma del texto del número y no de la fecha de la ficha porque los números antiguos figuran en el sitio con la fecha en que se cargaron (2001), no con la de publicación.
+
+Los metadatos se escriben dos veces: en el diccionario `Info` del PDF y en el paquete XMP (Dublin Core y PRISM). Acrobat, Zotero y la mayoría de los lectores dan prioridad al XMP, y el que deja InDesign suele traer como título el nombre del archivo `.indd`.
+
+## Estados en `manifest.csv`
 
 - `ok`: se aplica.
-- `revisar: falta …`: la extracción no encontró algún campo. Se completa a mano y se cambia a `ok`, o se aplica igual con `apply --include-review`.
-- `no_pdr`: el PDF no es de la serie, así que se omite.
+- `revisar: …`: falta algún campo, o el número del PDF no coincide con el de la ficha. Se corrige la fila y se cambia a `ok`, o se aplica igual con `apply --include-review`.
+- `sin_pdf`: la ficha existe, pero el sitio no publica el archivo (por ejemplo, los N° 1 a 12, de 1986-87).
 
 ## Límites conocidos
 
-- Fue probado contra el texto de la portada del PdR 766 y contra un sitio simulado, no contra `cepchile.cl`, que estaba bloqueado en el entorno donde se escribió el script. En la primera corrida conviene revisar el resumen de `crawl`. Si el rastreo completo resulta lento, se puede acotar con `--seed <URL del listado de la serie>` y `--follow <regex>`.
-- El apellido que va en el nombre del archivo es la última palabra del nombre, junto con sus partículas (*de la*, *van*). Con apellidos compuestos esto puede fallar, y en ese caso se corrige la columna `nuevo_nombre` del manifiesto.
-- Los PdR antiguos escaneados no tienen texto extraíble y quedan como `revisar`.
+- El apellido que va en el nombre del archivo es la última palabra del nombre, sin iniciales y junto con sus partículas (*de la*, *le*). Con apellidos compuestos, como «Mora y Araujo», puede fallar; en ese caso se corrige `nuevo_nombre`.
+- En los PDF escaneados no hay texto extraíble, así que quedan sin área ni palabras clave.
 - `/CreationDate` se fija en el primer día del mes de publicación.
 
 ## Pruebas
