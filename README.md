@@ -1,6 +1,6 @@
 ## Fabián Belmar
 
-Investigador postdoctoral en el Núcleo Milenio para la Ciencia de Datos Sociales (SODAS) e investigador asistente en C22, el programa de métodos digitales del Centro de Estudios Públicos (CEP). Doctor en Procesos e Instituciones Políticas por la Universidad Adolfo Ibáñez, con una tesis sobre corrupción más allá del Estado a partir del caso FIFA.
+Investigador del Centro de Estudios Públicos (CEP), donde trabajo en C22, el programa de métodos digitales, e investigador adjunto del Núcleo Milenio para la Ciencia de Datos Sociales (SODAS). Doctor en Procesos e Instituciones Políticas por la Universidad Adolfo Ibáñez, con una tesis sobre corrupción más allá del Estado a partir del caso FIFA.
 
 Trabajo sobre clientelismo, corrupción y política local en Chile, y sobre lo que los métodos computacionales permiten ver en esos fenómenos que las herramientas tradicionales no alcanzan. Este perfil reúne la parte de ese trabajo que se puede mostrar: plataformas, dashboards y herramientas de análisis, casi todas publicadas y en funcionamiento.
 
@@ -8,6 +8,8 @@ Trabajo sobre clientelismo, corrupción y política local en Chile, y sobre lo q
 
 | Proyecto | De qué se trata |
 |---|---|
+| [Las tesis del estallido](https://belmarfabian.github.io/estallido-tesis/) | Mapa longitudinal y base abierta de las interpretaciones del estallido social de 2019. Datos en [Zenodo](https://doi.org/10.5281/zenodo.23455927). |
+| [¿Con quién votas?](https://belmarfabian.github.io/con-quien-votas/) | Juego de educación cívica del CEP: votas proyectos de ley reales y ves con qué partido coincides según las votaciones de la Cámara. |
 | [Conflictos y justicia ambiental en Chile](https://belmarfabian.github.io/causas-ambientales-chile/) | Universo de conflictos socioecológicos chilenos y causas ante los tribunales ambientales, con datos abiertos y ficha por caso. SODAS y CEP. |
 | [Visualizadores de la Cámara de Diputadas y Diputados](https://belmarfabian.github.io/visualizadores-camara-c22/) | Votaciones y comportamiento legislativo del Congreso chileno, en visualizadores interactivos. C22-CEP. |
 | [Dashboards C22-CEP](https://belmarfabian.github.io/dashboards-c22/) | Conjunto de tableros sobre la sociedad chilena producidos por el programa C22. |
@@ -28,7 +30,7 @@ La lista completa -artículos, capítulos, documentos de trabajo y prensa- está
 
 ### Herramientas
 
-Trabajo habitualmente en R y Python para análisis y modelamiento, SQL para bases de datos, QGIS para lo espacial y LaTeX para escribir. Lo que publico acá suele terminar en un sitio estático, porque una investigación que nadie puede abrir no circula.
+Trabajo habitualmente en R y Python para análisis y modelamiento, SQL para bases de datos, QGIS para lo espacial y LaTeX para escribir. Lo que publico acá suele terminar en un sitio estático, porque una investigación que nadie puede abrir no circula. También mantengo utilidades pequeñas, como [Firma PDF](https://github.com/belmarfabian/firma-pdf), para firmar documentos sin imprimir ni escanear.
 
 ### Dónde encontrarme
 
